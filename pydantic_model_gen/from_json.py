@@ -1,39 +1,61 @@
+import hashlib
 import json
 import sys
 
 OTHER_TYPES = []
 
-BUFFER = []
-PARTIAL_BUFFER = []
-
 SEPARATOR = "    "
 
-def bufwrite(*args, sep=" ", end="\n"):
-    "Writes to the partial buffer."
-    PARTIAL_BUFFER.append(sep.join(args) + end)
+
+class Def:
+    def __init__(self, name: str):
+        self.name = name
+        self.lines: list[str] = []
+
+    def hash(self) -> str:
+        content = "\n".join(self.lines)
+        hasher = hashlib.md5()
+        # print("---content---")
+        # print(content)
+        # print("---content---")
+        hasher.update(content.encode())
+        return hasher.hexdigest()
+
+    def append(self, val: str):
+        self.lines.append(val)
+
+    def print(self):
+        print(f"class {self.name}(BaseModel):")
+        print(SEPARATOR + f"\n{SEPARATOR}".join(self.lines))
+        print("\n")
 
 
-def bufcommit():
-    BUFFER.append("".join(PARTIAL_BUFFER))
-    PARTIAL_BUFFER.clear()
+_generated_types = {}
 
 
-def generate(obj, key, with_commit: bool=True):
+def generate(obj, key, d: Def):
     if isinstance(obj, dict):
         for key, value in obj.items():
             if isinstance(value, list):
-                bufwrite(SEPARATOR + key + ":", "list[", end="")
-                generate(value, key, with_commit=False)
-                bufwrite("]")
+                types_def = generate(value, key, d)
+                d.append(key + ": list[%s]" % types_def)
             elif isinstance(value, dict):
                 type_name = key.title() + "Type"
-                bufwrite(SEPARATOR + key + ":", type_name)
-                OTHER_TYPES.append((type_name, value))
+                new_dict_d = Def(type_name)
+                generate(value, key, new_dict_d)
+                hash = new_dict_d.hash()
+                if hash in _generated_types:
+                    new_type_name = _generated_types[hash]
+                    d.append(key + ": %s" % new_type_name)
+                    continue
+                _generated_types[hash] = type_name
+                new_dict_d.print()
+                d.append(key + ": %s" % type_name)
             else:
-                generate(value, key)
+                generate(value, key, d=d)
 
     elif isinstance(obj, list):
-        key_count = 1
+        dict_key_count = 1
         types = set()
         for val in obj:
             if isinstance(val, str):
@@ -41,41 +63,33 @@ def generate(obj, key, with_commit: bool=True):
             elif isinstance(val, int):
                 types.add("int")
             elif isinstance(val, dict):
-                new_type_name = f"{key.title()}Type"
-                if key_count > 1:
-                    new_type_name += str(key_count)
-                key_count += 1
-                types.add(new_type_name)
-                OTHER_TYPES.append((new_type_name, val))
+                type_name = f"{key.title()}Type"
+                if dict_key_count > 1:
+                    type_name += str(dict_key_count)
+                new_dict_d = Def(type_name)
+                generate(val, key, new_dict_d)
+                hash = new_dict_d.hash()
+                if hash in _generated_types:
+                    new_type_name = _generated_types[hash]
+                    continue
+                _generated_types[hash] = type_name
+                new_dict_d.print()
+                dict_key_count += 1
+                types.add(type_name)
             else:
                 raise ValueError(f"Unhandled {val=}")
 
-        bufwrite(" | ".join(set(types)), end="")
+        return " | ".join(sorted(types))
 
     elif isinstance(obj, (str | int)):
-        bufwrite(SEPARATOR + key + ":", type(obj).__name__, end="")
+        d.append(key + ": %s" % type(obj).__name__)
 
-    if with_commit:
-        bufcommit()
 
 with open(sys.argv[1]) as wfile:
     data = json.load(wfile)
 
 classname = "Data"
-bufwrite("class %s(BaseModel):" % classname)
-generate(data, classname)
-bufwrite()
-print("from pydantic import BaseModel\n")
-MAIN_DS = "\n".join(BUFFER)
-BUFFER.clear()
-PARTIAL_BUFFER.clear()
-for otype in OTHER_TYPES[-1::-1]:
-    bufwrite("class %s(BaseModel):" % otype[0])
-    generate(otype[1], otype[0])
-    bufwrite()
-
-# print("\n".join(BUFFER))
-for i in BUFFER:
-    print(i)
-
-print("\n", MAIN_DS)
+print("from pydantic import BaseModel\n\n")
+d = Def(classname)
+generate(data, classname, d)
+d.print()

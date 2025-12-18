@@ -1,17 +1,9 @@
 from pydantic import BaseModel
 
 
-class DType2(BaseModel):
-    db: str
-
-
-class DType(BaseModel):
-    da: str
-
-
-class CType(BaseModel):
-    ca: str
-    cb: list[str]
+class BType(BaseModel):
+    ba: str
+    bb: str
 
 
 class BType2(BaseModel):
@@ -19,9 +11,17 @@ class BType2(BaseModel):
     bd: str
 
 
-class BType(BaseModel):
-    ba: str
-    bb: str
+class CType(BaseModel):
+    ca: str
+    cb: list[str]
+
+
+class DType(BaseModel):
+    da: str
+
+
+class DType2(BaseModel):
+    db: str
 
 
 class Data(BaseModel):
