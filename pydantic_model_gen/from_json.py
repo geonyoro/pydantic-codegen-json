@@ -71,6 +71,7 @@ def generate(obj, key, d: Def):
                 hash = new_dict_d.hash()
                 if hash in _generated_types:
                     new_type_name = _generated_types[hash]
+                    types.add(type_name)
                     continue
                 _generated_types[hash] = type_name
                 new_dict_d.print()
