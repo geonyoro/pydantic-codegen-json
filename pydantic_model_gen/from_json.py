@@ -9,6 +9,7 @@ SEPARATOR = "    "
 
 type_registry = {}
 type_count_registry = {}
+node_tree = []
 
 
 class Pair:
@@ -20,8 +21,14 @@ class Pair:
         return f"({self.one}, {self.two.to_xml_tree()})"
 
 
-class Raw:
+class TreeNode:
+    def __init__(self):
+        self.children: "list[Raw | NList | NDict]" = []
+
+
+class Raw(TreeNode):
     def __init__(self, key_name: str, type_name: str, ancestry: list[str]):
+        super().__init__()
         self.key_name = key_name
         self.type_name = type_name
         self.ancestry = ancestry
@@ -36,29 +43,40 @@ class Raw:
         return self.type_name
 
 
-class NDict:
+class NDict(TreeNode):
     def __init__(self, key_name: str, definition: dict, ancestry: list[str]):
+        super().__init__()
         self.key_name = key_name
         self.ancestry = ancestry
         self.definition = definition
+
+        level = len(self.ancestry)
+        if len(node_tree) <= level + 1:
+            node_tree.append([])
+        node_tree[level].append(self)
+
         self.define()
+        self._class_name = None
+        self._lines = None
+        self._is_computed = False
 
     def define(self):
         self.slots: list[Pair] = []
         for k, v in self.definition.items():
             if v is None:
-                obj_type = Raw(k, "None", ancestry=self.ancestry + [self.key_name])
+                val_obj = Raw(k, "None", ancestry=self.ancestry + [self.key_name])
+                continue  # TODO :Consider removal
             elif isinstance(v, dict):
-                obj_type = NDict(k, v, ancestry=self.ancestry + [self.key_name])
+                val_obj = NDict(k, v, ancestry=self.ancestry + [self.key_name])
             elif isinstance(v, list):
-                obj_type = NList(k, v, ancestry=self.ancestry + [self.key_name])
+                val_obj = NList(k, v, ancestry=self.ancestry + [self.key_name])
             else:
                 assert isinstance(v, (int, str))
-                obj_type = Raw(
+                val_obj = Raw(
                     k, type(v).__name__, ancestry=self.ancestry + [self.key_name]
                 )
-            self.slots.append(Pair(k, obj_type))
-        nodes.append(self)
+            self.children.append(val_obj)
+            self.slots.append(Pair(k, val_obj))
 
     def to_xml_tree(self):
         out = [f"<{self.key_name}:NDict>"]
@@ -67,23 +85,21 @@ class NDict:
         out.append(f"</{self.key_name}>")
         return "\n".join(out)
 
-    @property
-    def name(self):
-        return self.key_name
-
-    def to_type_name(self):
-        lines, type_name = self.compute()
-        if not lines:
-            # we found this in a digest
-            return type_name
-
-        key = self.key_name
-        return key[0].title() + key[1:] + "Type"
+    def to_type_name(self) -> str:
+        return self.compute()[1]
 
     def generate(self):
         return self.compute()[0]
 
-    def compute(self):
+    def compute(self) -> tuple[None | str, str]:
+        if not self._is_computed:
+            self._lines, self._class_name = self._compute()
+            self._is_computed = True
+
+        assert self._class_name
+        return self._lines, self._class_name
+
+    def _compute(self) -> tuple[str | None, str]:
         body_lines = []
         for p in self.slots:
             field_alias = ""
@@ -107,9 +123,9 @@ class NDict:
         class_name = class_name[0].title() + class_name[1:] + "Type"
 
         # handle counting
-        count = type_count_registry.get(class_name, 0)
+        count = type_count_registry.get(class_name, 1)
         type_count_registry[class_name] = count + 1
-        if count > 0:
+        if count > 1:
             class_name += str(count)
 
         type_registry[digest] = class_name
@@ -117,33 +133,40 @@ class NDict:
         return lines, class_name
 
 
-class NList:
+class NList(TreeNode):
     def __init__(self, key_name: str, definition: list, ancestry: list[str]):
+        super().__init__()
         self.key_name = key_name
         self.slots: list[NList | NDict | Raw] = []
         self.ancestry = ancestry
         self.definition = definition
+
+        level = len(self.ancestry)
+        if len(node_tree) <= level + 1:
+            node_tree.append([])
+        node_tree[level].append(self)
+
         self.define()
 
     def define(self):
         for v in self.definition:
             if isinstance(v, dict):
-                obj_type = NDict(
+                val_obj = NDict(
                     self.key_name, v, ancestry=self.ancestry + [self.key_name]
                 )
             elif isinstance(v, list):
-                obj_type = NList(
+                val_obj = NList(
                     self.key_name, v, ancestry=self.ancestry + [self.key_name]
                 )
             else:
                 assert isinstance(v, (int, str))
-                obj_type = Raw(
+                val_obj = Raw(
                     self.key_name,
                     type(v).__name__,
                     ancestry=self.ancestry + [self.key_name],
                 )
-            self.slots.append(obj_type)
-        nodes.append(self)
+            self.children.append(val_obj)
+            self.slots.append(val_obj)
 
     def to_xml_tree(self):
         elems = [i.to_xml_tree() for i in self.slots]
@@ -151,7 +174,7 @@ class NList:
         return f"NList:[{out}]"
 
     def to_type_name(self):
-        types = [i.to_type_name() for i in self.slots]
+        types = sorted(list(i.to_type_name() for i in self.slots))
         type_union_str = " | ".join(types)
         return "list[%s]" % type_union_str
 
@@ -159,38 +182,68 @@ class NList:
         pass
 
 
-class NodeTree:
-    nodes: list[NDict | NList | Raw] = []
-
-    def append(self, node):
-        self.nodes.append(node)
-
-    def to_xml_tree(self):
-        out = ["<Tree>"]
-        for elem in self.nodes:
-            out.append(elem.to_xml_tree())
-        out.append("</Tree>")
-        return "\n".join(out)
-
-
-nodes = NodeTree()
-
-
 def handle_data(data):
     if isinstance(data, list):
-        nodes.append(NList("Root", data, ancestry=[]))
+        NList("Root", data, ancestry=[])
     elif isinstance(data, dict):
-        nodes.append(NDict("Root", data, ancestry=[]))
+        NDict("Root", data, ancestry=[])
     else:
-        nodes.append(Raw("Root", data, ancestry=[]))
+        Raw("Root", data, ancestry=[])
 
 
 with open(sys.argv[1]) as wfile:
     handle_data(json.load(wfile))
 
-for i in nodes.nodes:
-    generated = i.generate()
-    if not generated:
-        continue
-    print(generated)
-    print()
+# for i in nodes.nodes:
+
+#     generated = i.generate()
+#     if not generated:
+#         continue
+#     print(generated)
+#     print()
+
+
+def node_name_sort(name):
+    """Converts name to have digits"""
+    if name.startswith("list["):
+        return name
+
+    digits = ""
+    break_idx = len(name)
+    for idx in range(len(name) - 1, -1, -1):
+        # check
+        chr = name[idx]
+        if chr not in "0123456789":
+            break
+        break_idx = idx
+        digits = chr + digits
+
+    digit_count = len(str(max_type_count))
+    for _ in range(len(digits), digit_count):
+        digits = "0" + digits
+
+    final_name = name[:break_idx] + digits
+    return final_name
+
+
+
+max_type_count = 0
+for idx in range(len(node_tree) - 1, -1, -1):
+    nodes_at_level = node_tree[idx]
+    # cannot use dict because some of the classes cannot be generated
+    names_to_level_nodes = {}
+    for n in nodes_at_level:
+        tname = n.to_type_name()
+
+        if tname not in names_to_level_nodes:
+            names_to_level_nodes[tname] = []
+        names_to_level_nodes[tname].append(n)
+
+    if type_count_registry.values():
+        max_type_count = max(type_count_registry.values())
+    for name in sorted(names_to_level_nodes.keys(), key=node_name_sort):
+        for node in names_to_level_nodes[name]:
+            generated = node.generate()
+            if generated:
+                print(generated)
+                print()
