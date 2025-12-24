@@ -1,6 +1,7 @@
 import hashlib
 import json
 import sys
+import typing
 
 OTHER_TYPES = []
 
@@ -107,7 +108,12 @@ class NDict(TreeNode):
             if field_key.startswith("_"):
                 field_key = p.one.lstrip("_")
                 field_alias = f' = Field(alias="{p.one}")'
-            line = "%s%s: %s%s" % (" "*4, field_key, p.two.to_type_name(), field_alias)
+            line = "%s%s: %s%s" % (
+                " " * 4,
+                field_key,
+                p.two.to_type_name(),
+                field_alias,
+            )
             body_lines.append(line)
 
         body_definition = "\n".join(body_lines)
@@ -182,6 +188,52 @@ class NList(TreeNode):
         pass
 
 
+Node = Raw | NDict | NList
+
+
+def combine_nodes(nodes_to_combine: list[NDict]):
+    count = len(nodes_to_combine)
+    if count <= 1:
+        return
+
+    for n in nodes_to_combine:
+        print(n.generate())
+
+    res = input(f"\nCombine these {count} classes?[Y/n]").strip()
+    if res and res.lower() not in ("y", "yes"):
+        return
+
+    lines = []
+    classdef = ""
+    base_node = None
+    # make some optional
+    for idx, n in enumerate(nodes_to_combine):
+        out = n.generate()
+        assert out
+        out_parts = out.split("\n")
+        lines.extend(out_parts[1:])
+        if idx == 0:
+            base_node = n
+            classdef = out_parts[0]
+        else:
+            n._lines = []
+            n._class_name = base_node._class_name
+
+    # lines without class def
+    lines = "\n".join([classdef] + lines)
+    assert base_node
+    base_node._lines = lines
+
+
+def handle_data(data):
+    if isinstance(data, list):
+        NList("Root", data, ancestry=[])
+    elif isinstance(data, dict):
+        NDict("Root", data, ancestry=[])
+    else:
+        Raw("Root", data, ancestry=[])
+
+
 def node_name_sort(name):
     """Converts name to have digits"""
     if name.startswith("list["):
@@ -205,41 +257,56 @@ def node_name_sort(name):
     return final_name
 
 
-def handle_data(data):
-    if isinstance(data, list):
-        NList("Root", data, ancestry=[])
-    elif isinstance(data, dict):
-        NDict("Root", data, ancestry=[])
-    else:
-        Raw("Root", data, ancestry=[])
-
-
 with open(sys.argv[1]) as wfile:
     handle_data(json.load(wfile))
 
 
-
-# TODO: Handle determining imports better 
+# TODO: Handle determining imports better
 print("from pydantic import BaseModel, Field\n\n")
+
 
 max_type_count = 0
 for idx in range(len(node_tree) - 1, -1, -1):
     nodes_at_level = node_tree[idx]
-    # cannot use dict because some of the classes cannot be generated
-    names_to_level_nodes = {}
+
+    names_to_level_nodes: dict[str, list[TreeNode]] = {}
+    combination_nodes: dict[str, list[Node]] = {}
     for n in nodes_at_level:
         tname = n.to_type_name()
-
         if tname not in names_to_level_nodes:
             names_to_level_nodes[tname] = []
         names_to_level_nodes[tname].append(n)
 
+        ancestry_str = ",".join(n.ancestry)
+        comb_key = f"{ancestry_str}:{n.key_name}"
+        if comb_key not in combination_nodes:
+            combination_nodes[comb_key] = []
+        combination_nodes[comb_key].append(n)
+
+    found = False
+    for key_name, node_group in combination_nodes.items():
+        if len(node_group) <= 1:
+            continue
+        print_count = 0
+        nodes_to_combine = []
+        for n in node_group:
+            ...
+            generated = n.generate()
+            if generated:
+                nodes_to_combine.append(n)
+        found = len(nodes_to_combine) > 1
+        combine_nodes(nodes_to_combine)
+        break
+
+    # if found:
+    #     break
+
     if type_count_registry.values():
         max_type_count = max(type_count_registry.values())
+
     for name in sorted(names_to_level_nodes.keys(), key=node_name_sort):
         for node in names_to_level_nodes[name]:
             generated = node.generate()
             if generated:
                 print(generated)
-                print()
                 print()
