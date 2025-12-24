@@ -107,7 +107,7 @@ class NDict(TreeNode):
             if field_key.startswith("_"):
                 field_key = p.one.lstrip("_")
                 field_alias = f' = Field(alias="{p.one}")'
-            line = "\t%s: %s%s" % (field_key, p.two.to_type_name(), field_alias)
+            line = "%s%s: %s%s" % (" "*4, field_key, p.two.to_type_name(), field_alias)
             body_lines.append(line)
 
         body_definition = "\n".join(body_lines)
@@ -129,7 +129,7 @@ class NDict(TreeNode):
             class_name += str(count)
 
         type_registry[digest] = class_name
-        lines = f"class {class_name}:\n" + body_definition
+        lines = f"class {class_name}(BaseModel):\n" + body_definition
         return lines, class_name
 
 
@@ -182,27 +182,6 @@ class NList(TreeNode):
         pass
 
 
-def handle_data(data):
-    if isinstance(data, list):
-        NList("Root", data, ancestry=[])
-    elif isinstance(data, dict):
-        NDict("Root", data, ancestry=[])
-    else:
-        Raw("Root", data, ancestry=[])
-
-
-with open(sys.argv[1]) as wfile:
-    handle_data(json.load(wfile))
-
-# for i in nodes.nodes:
-
-#     generated = i.generate()
-#     if not generated:
-#         continue
-#     print(generated)
-#     print()
-
-
 def node_name_sort(name):
     """Converts name to have digits"""
     if name.startswith("list["):
@@ -226,6 +205,22 @@ def node_name_sort(name):
     return final_name
 
 
+def handle_data(data):
+    if isinstance(data, list):
+        NList("Root", data, ancestry=[])
+    elif isinstance(data, dict):
+        NDict("Root", data, ancestry=[])
+    else:
+        Raw("Root", data, ancestry=[])
+
+
+with open(sys.argv[1]) as wfile:
+    handle_data(json.load(wfile))
+
+
+
+# TODO: Handle determining imports better 
+print("from pydantic import BaseModel, Field\n\n")
 
 max_type_count = 0
 for idx in range(len(node_tree) - 1, -1, -1):
@@ -246,4 +241,5 @@ for idx in range(len(node_tree) - 1, -1, -1):
             generated = node.generate()
             if generated:
                 print(generated)
+                print()
                 print()

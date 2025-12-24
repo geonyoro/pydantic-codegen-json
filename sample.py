@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class BType(BaseModel):
@@ -24,7 +24,7 @@ class DType2(BaseModel):
     db: str
 
 
-class Data(BaseModel):
+class RootType(BaseModel):
     a: str
     b: list[BType2 | BType | str]
     c: CType
