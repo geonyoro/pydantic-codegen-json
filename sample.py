@@ -7,8 +7,8 @@ class BType(BaseModel):
 
 
 class BType2(BaseModel):
+    ba: str
     bc: str
-    bd: str
 
 
 class CType(BaseModel):
