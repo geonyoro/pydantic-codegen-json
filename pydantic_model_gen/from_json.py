@@ -174,7 +174,7 @@ class NList(TreeNode):
         return f"NList:[{out}]"
 
     def to_type_name(self):
-        types = sorted(list(i.to_type_name() for i in self.slots))
+        types = sorted(list(set(i.to_type_name() for i in self.slots)))
         type_union_str = " | ".join(types)
         return "list[%s]" % type_union_str
 
