@@ -19,7 +19,7 @@ A Python tool that automatically generates [Pydantic](https://docs.pydantic.dev/
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/pydantic-model-gen.git
+   git clone https://github.com/geonyoro/pydantic-model-gen.git
    cd pydantic-model-gen
    ```
 
