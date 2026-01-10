@@ -11,6 +11,8 @@ type_registry = {}
 type_count_registry = {}
 node_tree = []
 
+BASIC_TYPES = (int, str, float)
+
 
 class Pair:
     def __init__(self, one, two):
@@ -71,7 +73,7 @@ class NDict(TreeNode):
             elif isinstance(v, list):
                 val_obj = NList(k, v, ancestry=self.ancestry + [self.key_name])
             else:
-                assert isinstance(v, (int, str))
+                assert isinstance(v, BASIC_TYPES)
                 val_obj = Raw(
                     k, type(v).__name__, ancestry=self.ancestry + [self.key_name]
                 )
@@ -107,7 +109,12 @@ class NDict(TreeNode):
             if field_key.startswith("_"):
                 field_key = p.one.lstrip("_")
                 field_alias = f' = Field(alias="{p.one}")'
-            line = "%s%s: %s%s" % (" "*4, field_key, p.two.to_type_name(), field_alias)
+            line = "%s%s: %s%s" % (
+                " " * 4,
+                field_key,
+                p.two.to_type_name(),
+                field_alias,
+            )
             body_lines.append(line)
 
         body_definition = "\n".join(body_lines)
@@ -150,7 +157,9 @@ class NList(TreeNode):
 
     def define(self):
         for v in self.definition:
-            if isinstance(v, dict):
+            if v is None:
+                continue  # TODO: Consider how to handle this
+            elif isinstance(v, dict):
                 val_obj = NDict(
                     self.key_name, v, ancestry=self.ancestry + [self.key_name]
                 )
@@ -159,7 +168,7 @@ class NList(TreeNode):
                     self.key_name, v, ancestry=self.ancestry + [self.key_name]
                 )
             else:
-                assert isinstance(v, (int, str))
+                assert isinstance(v, BASIC_TYPES)
                 val_obj = Raw(
                     self.key_name,
                     type(v).__name__,
@@ -218,8 +227,7 @@ with open(sys.argv[1]) as wfile:
     handle_data(json.load(wfile))
 
 
-
-# TODO: Handle determining imports better 
+# TODO: Handle determining imports better
 print("from pydantic import BaseModel, Field\n\n")
 
 max_type_count = 0
