@@ -158,7 +158,10 @@ class NList(TreeNode):
     def define(self):
         for v in self.definition:
             if v is None:
-                continue  # TODO: Consider how to handle this
+                # TODO: Consider how to handle this
+                val_obj = Raw(
+                    self.key_name, "None", ancestry=self.ancestry + [self.key_name]
+                )
             elif isinstance(v, dict):
                 val_obj = NDict(
                     self.key_name, v, ancestry=self.ancestry + [self.key_name]
